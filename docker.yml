@@ -1,0 +1,117 @@
+---
+- hosts: localhost
+  tasks:
+  - name: "Ensure old Versions of Docker are not Installed"
+    package:
+            name:
+                    - docker
+                    - docker-engine
+            state: absent
+
+  - name: "Repository for Docker for [RedHat Family]"
+    yum_repository:
+            name: "docker"
+            description: "Docker Repo"
+            baseurl: "https://download.docker.com/linux/centos/7/x86_64/stable"
+            gpgcheck: no
+    when: ansible_facts['os_family'] == "RedHat" and ansible_facts['distribution'] != "Amazon"
+
+  - name: "Ensure dependencies are installed in [Debian Family]"
+    apt:
+            name:
+                    - apt-transport-https
+                    - ca-certificates
+                    - curl
+                    - software-properties-common
+            state: present
+    when: ansible_facts['os_family'] == "Debian"
+
+
+  - name: "Adding the GPG key for the official Docker Repository for [Debian Family]"
+    apt_key:
+            url: "{{ docker_apt_gpg_key }}"
+            state: present        
+    when: ansible_facts['os_family'] == "Debian"
+
+  - name: "Add specified repository into sources list using specified filename for [Debian Family]"
+    apt_repository:
+            repo: "{{ docker_apt_repository }}"
+            state: present
+            update_cache: true
+            filename: docker
+    when: ansible_facts['os_family'] == "Debian"
+
+  - name: "Installing containerd.io in [RedHat Family]"
+    package:
+            name: "https://download.docker.com/linux/centos/7/x86_64/stable/Packages/containerd.io-1.4.3-3.1.el7.x86_64.rpm"
+            state: present
+            disable_gpg_check: True
+    when: ansible_facts['os_family'] == "RedHat" and ansible_facts['distribution'] != "Amazon"
+
+  - name: "Installing docker"
+    package:
+            name: "docker-ce"
+            state: present
+    when: ansible_facts['distribution'] != "Amazon"
+
+  - name: "Installing docker in Amazon Linux"
+    package:
+            name: "docker"
+            state: present
+    when: ansible_facts['distribution'] == "Amazon"
+
+  - name: "Starting Docker Service"
+    service:
+            name:  "docker"
+            state: started
+            enabled: yes
+
+  - name: "Installing Python3"
+    package:
+            name: "python3"
+            state: present
+
+  - name: "Installing Docker Pyhton Library Using pip"
+    pip:
+            name: "docker-py"
+
+  - name: "Launching Docker Container With SSH Configured"
+    docker_container:
+            name: "test_ssh"
+            image: "hemendra05/centos_ssh:4"
+            interactive: true
+            detach: true
+            tty: true
+
+  - name: "Retrieving Info Of Container"
+    docker_container_info:
+            name: "test_ssh"
+    register: docker_inspect
+
+  - name: "IP of Container"
+    debug:
+            msg: "{{ docker_inspect['container']['NetworkSettings']['IPAddress'] }}"
+
+  - name: "Adding the In-Memory-Inventory for the Container"
+    add_host:
+            name: "{{ docker_inspect['container']['NetworkSettings']['IPAddress'] }}"
+            groups: "containers"
+            ansible_user: root
+            ansible_ssh_pass: Hariom0786
+
+- hosts: containers
+  tasks:
+  - name: "Installing HTTPD Server inside the Container"
+    package:
+            name: "httpd"
+            state: present
+
+  - name: "Starting Service"
+    command: "/usr/sbin/httpd"
+
+  - name: "Copy Content to the Container"
+    copy:
+            dest: /var/www/html/index.html
+            content: "This is for Container!! IP {{ ansible_facts['default_ipv4']['address'] }}"
+
+
